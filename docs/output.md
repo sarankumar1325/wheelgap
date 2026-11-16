@@ -328,10 +328,11 @@ gaps = [p["name"] for p in data["packages"] if p["results"].get(key) in ("source
 
 With `--json --explain`, each package gets `rejected` (`{"file", "reason"}` objects) and `via` (the dependency path),
 both keyed by target label like `results`; `via` is `{}` for inputs with no dependency graph. It also
-gets `issues_url`: the package's issue tracker URL from its PyPI metadata, or `null`, and `direct`: for each gap
-target, the direct dependencies that lead to the package, as the table's `cryptography (via mcp)` names them
-(`{"win-arm64": ["mcp", "httpx"]}`). `direct` has entries only for uv.lock, Poetry 1.x and `--deps` inputs, and
-leaves out a target where the package is itself a direct dependency or only an extra leads to it.
+gets `issues_url`: the package's issue tracker URL from its PyPI metadata, or `null`, and (**after 0.12.0**) `direct`:
+for each gap target, the direct dependencies that lead to the package, as the table's `cryptography (via mcp)` names
+them (`{"win-arm64": ["mcp", "httpx"]}`). `direct` has entries only for uv.lock, Poetry 1.x and `--deps` inputs. It
+leaves out a target where the package is itself a direct dependency, and may leave one out when the lockfile doesn't
+record which direct dependency asked for an extra that leads to the package (Poetry 1.x).
 
 If an input can't be read (a missing lockfile, an unknown target, a bad `[tool.wheelgap]` value), `--json` prints an
 error object on stdout instead of results, next to the usual `wheelgap: error:` line on stderr and exit code 2:
