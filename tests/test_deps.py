@@ -581,6 +581,19 @@ def test_failed_metadata_reads_arent_cached(index, monkeypatch):
     monkeypatch.setattr(pypi, "fetch_text", good)
     tree = Resolver(read_cache=True, write_cache=True).resolve([Requirement("app==1.0")], WIN)
     assert not tree.errors
+    assert tree.chosen == Resolver().resolve([Requirement("app==1.0")], WIN).chosen  # the whole tree, nothing lost
+
+
+def test_a_page_that_isnt_metadata_isnt_cached(index, monkeypatch):
+    # A proxy or captive portal answers 200 with its own page: no Requires-Dist, but no Metadata-Version either.
+    good = pypi.fetch_text
+    monkeypatch.setattr(pypi, "fetch_text", lambda url, max_bytes, timeout=20.0, attempts=4: "<html>Sign in</html>")
+    Resolver(read_cache=True, write_cache=True).resolve([Requirement("app==1.0")], WIN)
+    monkeypatch.setattr(pypi, "fetch_text", good)
+    index.clear()
+    tree = Resolver(read_cache=True, write_cache=True).resolve([Requirement("app==1.0")], WIN)
+    assert [u for u in index if u.endswith(".metadata")]  # asked again: the portal's page wasn't kept
+    assert tree.chosen == Resolver().resolve([Requirement("app==1.0")], WIN).chosen
 
 
 def test_cached_metadata_entries_are_checked(index):

@@ -98,9 +98,12 @@ class Resolver:
         if url not in self._metadata:
             try:
                 text = pypi.fetch_text(url, max_bytes=METADATA_MAX_BYTES)
-                requires = email.parser.Parser().parsestr(text).get_all("Requires-Dist") or []
+                parsed = email.parser.Parser().parsestr(text)
+                requires = parsed.get_all("Requires-Dist") or []
                 self._metadata[url] = requires
-                if self.write_cache:
+                # Only a real metadata file is kept: a proxy's or captive portal's page answers 200 too, and would
+                # otherwise be cached as "no dependencies" for a day.
+                if self.write_cache and parsed.get("Metadata-Version"):
                     cache.save_metadata(pypi.index_url(), url, requires)
             except urllib.error.HTTPError as e:
                 self._metadata[url] = ValueError(f"no metadata file for {wheel['filename']} (HTTP {e.code})")
