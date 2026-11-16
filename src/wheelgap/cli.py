@@ -58,6 +58,7 @@ from .sources import (
     Source,
     SourceError,
     UvSelection,
+    check_report_targets,
     load_inputs,
     parse_dist,
     pythons_outside_lock,
@@ -145,7 +146,7 @@ def make_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="INPUT",
         help=(
-            "uv.lock, pylock.toml, poetry.lock, Pipfile.lock, pixi.lock, requirements.txt, "
+            "uv.lock, pylock.toml, poetry.lock, Pipfile.lock, pixi.lock, requirements.txt, report.json, "
             "pyproject.toml (direct dependencies), a directory, or package specs (default: .)"
         ),
     )
@@ -1726,6 +1727,7 @@ def _main(argv: list[str]) -> int:
             check_index_url()  # WHEELGAP_INDEX_URL only matters for the JSON API
         sources = [parse_dist(Path(args.dist))] if args.dist else load_inputs(args.inputs or ["."], args.environment)
         for source in sources:
+            check_report_targets(source, targets)
             if source.passed_over is not None and not quiet:
                 print(
                     f"wheelgap: note: {source.path} was checked; {source.passed_over} is in the same folder too "
