@@ -45,6 +45,7 @@ env | grep -q {TOKEN} && echo pipx >> "$LEAK_FILE"
 [ -n "${{PIPX_FAIL:-}}" ] && {{ echo "pipx: failed to install" >&2; exit 1; }}
 [ -n "${{PIPX_INJECT:-}}" ] && printf '::error::pwned\\nnote ##[warning]x\\r::add-mask::y\\n' >&2
 printf '%s\\n' "$*" >> "${{PIPX_LOG:-/dev/null}}"
+[ -n "${{PIPX_ARGV:-}}" ] && {{ printf '%s\\037' "$@"; printf '\\n'; }} >> "$PIPX_ARGV"  # one call per line
 shift 4  # run --spec PATH wheelgap
 exec "$PYTHON_REAL" -c '
 import os
@@ -477,6 +478,7 @@ def run_step(tmp_path):
             "LEAK_FILE": str(out / "leaks"),
             "PYPI_LOG": str(out / "pypi.log"),
             "PIPX_LOG": str(out / "pipx.log"),
+            "PIPX_ARGV": str(out / "pipx.argv"),
             "GITHUB_ACTION_PATH": str(ROOT),
             "GITHUB_STEP_SUMMARY": str(out / "summary"),
             "WHEELGAP_ARGS": "-p 3.13 -t linux-x86_64,musl-aarch64",
@@ -498,6 +500,8 @@ def run_step(tmp_path):
             "log": done.stdout + done.stderr,
             "summary": read("summary"),
             "pipx": read("pipx.log").splitlines(),
+            # Each pipx call's exact arguments after `run --spec PATH wheelgap`, so splitting is visible.
+            "argv": [line.split("\x1f")[4:-1] for line in read("pipx.argv").splitlines()],
             "pypi": read("pypi.log").splitlines(),
             "work": work,
         }
@@ -579,3 +583,73 @@ def test_dist_and_compare_to_are_refused(run):
     assert r["code"] == 2
     assert r["log"].startswith("::error::wheelgap: ") and "can't be combined with compare-to" in r["log"]
     assert r["summary"] == "" and r["gh"] == []
+
+
+# The paths everyone already uses (#411): #405 changed both pipx lines from a bare $WHEELGAP_ARGS to "$@".
+SUMMARY_FLAGS = ["--markdown", "--no-quiet", "--exit-zero"]
+
+
+def lockfiles(work):
+    (work / "base").mkdir()
+    shutil.copy(FIXTURES / "base" / "uv.lock", work / "base" / "uv.lock")
+    shutil.copy(FIXTURES / "head" / "uv.lock", work / "uv.lock")
+
+
+def test_lockfile_check_annotates_first_and_keeps_the_real_exit_code(run_step):
+    lockfiles(run_step.work)
+    r = run_step(WHEELGAP_ARGS="uv.lock -p 3.13 -t linux-aarch64,musl-aarch64")
+    check, summary = r["argv"]
+    assert check == ["--github-annotations", "uv.lock", "-p", "3.13", "-t", "linux-aarch64,musl-aarch64"]
+    assert summary == [*SUMMARY_FLAGS, "uv.lock", "-p", "3.13", "-t", "linux-aarch64,musl-aarch64"]
+    # head's armlib lost its musl-aarch64 wheel: the step fails with the check's code, not the summary run's 0.
+    assert r["code"] == 1, r["log"]
+    assert r["summary"].startswith("### wheelgap")
+    assert r["pypi"] == []  # the lockfile has every file; nothing is looked up
+
+
+def test_lockfile_check_passes_with_the_real_exit_code(run_step):
+    lockfiles(run_step.work)
+    r = run_step(WHEELGAP_ARGS="base/uv.lock -p 3.13 -t linux-aarch64,musl-aarch64")
+    assert r["code"] == 0, r["log"]
+    assert r["argv"][0][:2] == ["--github-annotations", "base/uv.lock"]
+
+
+def test_diff_stays_first_and_gets_no_annotations(run_step):
+    lockfiles(run_step.work)
+    r = run_step(WHEELGAP_ARGS="diff base/uv.lock uv.lock -p 3.13 -t musl-aarch64")
+    check = r["argv"][0]
+    assert check == ["diff", "base/uv.lock", "uv.lock", "-p", "3.13", "-t", "musl-aarch64"]
+    assert all("--github-annotations" not in call for call in r["argv"])
+    assert r["code"] == 1, r["log"]  # armlib lost its musl-aarch64 wheel
+
+
+def test_args_split_and_glob_as_the_old_unquoted_variable_did(run_step):
+    lockfiles(run_step.work)
+    args = "uv.l?ck  -p 3.13\t-t musl-aarch64 nomatch*.lock"
+    r = run_step(WHEELGAP_ARGS=args, WHEELGAP_SUMMARY="false")
+    # What `wheelgap $WHEELGAP_ARGS` (unquoted, the pre-#405 line) gives in the same folder.
+    old = subprocess.run(
+        ["bash", "-c", 'printf "%s\\037" $WHEELGAP_ARGS'],
+        cwd=run_step.work,
+        env={**os.environ, "WHEELGAP_ARGS": args},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\x1f")[:-1]
+    assert old == ["uv.lock", "-p", "3.13", "-t", "musl-aarch64", "nomatch*.lock"]
+    assert r["argv"] == [["--github-annotations", *old]]
+
+
+def test_summary_appends_only_a_real_report(run_step):
+    lockfiles(run_step.work)
+    r = run_step(WHEELGAP_ARGS="--version")
+    assert [call[: len(SUMMARY_FLAGS)] for call in r["argv"][1:]] == [SUMMARY_FLAGS]
+    assert r["argv"][1][len(SUMMARY_FLAGS) :] == ["--version"]
+    assert r["code"] == 0, r["log"]
+    assert r["summary"] == ""  # --version output isn't a "### wheelgap" report
+
+
+def test_no_summary_run_when_the_input_is_bad(run_step):
+    r = run_step(WHEELGAP_ARGS="missing.lock -p 3.13")
+    assert r["code"] == 2
+    assert len(r["argv"]) == 1 and r["summary"] == ""
