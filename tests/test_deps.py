@@ -619,12 +619,15 @@ def test_cli_deps_reads_metadata_from_the_cache_on_a_second_run(index, capsys):
 def test_cli_deps_online_asks_for_metadata_again_and_saves_it(index, capsys):
     """#415: --online skips reading the metadata cache but still writes it, so a plain run afterwards uses it."""
     args = ["app==1.0", "--deps", "-p", "3.14", "-t", "win-arm64"]
-    assert main(args) in (0, 1)
+    # --online first, on an empty cache: it fetches the metadata files...
+    assert main([*args, "--online"]) in (0, 1)
     first = sorted(u for u in index if u.endswith(".metadata"))
     assert first
     index.clear()
-    assert main([*args, "--online"]) in (0, 1)
-    assert sorted(u for u in index if u.endswith(".metadata")) == first
-    index.clear()
+    # ...and saves them: a plain run reads them from the cache (fails if --online didn't write).
     assert main(args) in (0, 1)
     assert not [u for u in index if u.endswith(".metadata")]
+    index.clear()
+    # --online again asks for every one, though they're cached (fails if --online read the cache).
+    assert main([*args, "--online"]) in (0, 1)
+    assert sorted(u for u in index if u.endswith(".metadata")) == first
