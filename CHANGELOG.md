@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `--sarif PATH` also writes a SARIF 2.1.0 report for GitHub code scanning: one result per package and gap target (`wheelgap/source` or `wheelgap/missing`), at the package's line in its lockfile, with the `--explain` reason in the message. The level is `note` on an `--advisory` target and `warning` for a source build `--fail-on missing` allows; `--ignore NAME:TARGET` gaps are left out. [CI](https://wheelgap.github.io/wheelgap/ci/#code-scanning) has an upload-sarif workflow. (#NNN, thanks [@sarankumar1325](https://github.com/sarankumar1325))
+- `--sarif PATH` also writes a SARIF 2.1.0 report for GitHub code scanning: one result per package and gap target (`wheelgap/source` or `wheelgap/missing`), at the package's line in its lockfile, with the `--explain` reason in the message. The level is `note` on an `--advisory` target and `warning` for a source build `--fail-on missing` allows; `--ignore NAME:TARGET` gaps are left out. [CI](https://wheelgap.github.io/wheelgap/ci/#code-scanning) has an upload-sarif workflow. (#430, thanks [@sarankumar1325](https://github.com/sarankumar1325))
 - `--deps` on a requirements file no longer refuses a constraint file with environment markers (`urllib3<2; python_version < "3.10"`), such as OpenStack's upper-constraints: each marked constraint applies on the targets where pip would apply it, and `extra == "..."` never holds on a constraint, as in pip. A marker a target can't decide (`platform_release`, `platform_version`, or `platform_machine` on a target like `linux-armv7l`) on a package the tree installs still stops the run with an error, as a URL constraint does. (#425, thanks [@AdityaSreevatsaK](https://github.com/AdityaSreevatsaK))
 
 ## 0.12.0 (2026-11-16)
