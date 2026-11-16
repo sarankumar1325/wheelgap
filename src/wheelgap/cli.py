@@ -59,6 +59,7 @@ from .sources import (
     Source,
     SourceError,
     UvSelection,
+    check_report_targets,
     load_inputs,
     parse_dist,
     pythons_outside_lock,
@@ -146,7 +147,7 @@ def make_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="INPUT",
         help=(
-            "uv.lock, pylock.toml, poetry.lock, Pipfile.lock, pixi.lock, requirements.txt, "
+            "uv.lock, pylock.toml, poetry.lock, Pipfile.lock, pixi.lock, requirements.txt, report.json, "
             "pyproject.toml (direct dependencies), a directory, or package specs (default: .)"
         ),
     )
@@ -942,6 +943,13 @@ def report_json(
             }
             # Same targets as `rejected`, minus any without a path (inputs with no dependency graph).
             out["via"] = {t.label(multi_py): r.via[t] for t in gap_targets(r, targets) if t in r.via}
+            # The direct dependencies that lead to each gap target, as the table's `(via ...)` names them; only where
+            # the input says (uv.lock, Poetry 1.x, --deps), so `{}` for a direct dependency or an input without a graph.
+            out["direct"] = {
+                t.label(multi_py): list(dict.fromkeys(r.direct_via[t]))
+                for t in gap_targets(r, targets)
+                if r.direct_via.get(t)
+            }
             if issues_urls is not None:
                 out["issues_url"] = issues_urls.get(id(r.package))
             if conda_forge and (h := conda_forge.get(id(r.package))):
@@ -1725,6 +1733,7 @@ def _main(argv: list[str]) -> int:
             check_index_url()  # WHEELGAP_INDEX_URL only matters for the JSON API
         sources = [parse_dist(Path(args.dist))] if args.dist else load_inputs(args.inputs or ["."], args.environment)
         for source in sources:
+            check_report_targets(source, targets)
             if source.passed_over is not None and not quiet:
                 print(
                     f"wheelgap: note: {source.path} was checked; {source.passed_over} is in the same folder too "
