@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `--json --explain` adds `direct` to each package: for each gap target, the direct dependencies that lead to it (`{"win-arm64": ["mcp", "httpx"]}`), as the text table's `cryptography (via mcp)` names them, for uv.lock, Poetry 1.x and `--deps` inputs. Additive: `{}` for a direct dependency or an input without a graph, and no existing key changes. (#PR, thanks [@sarankumar1325](https://github.com/sarankumar1325))
+- `--json --explain` adds `direct` to each package: for each gap target, the direct dependencies that lead to it (`{"win-arm64": ["mcp", "httpx"]}`), as the text table's `cryptography (via mcp)` names them, for uv.lock, Poetry 1.x and `--deps` inputs. Additive: `{}` for a direct dependency or an input without a graph, and no existing key changes. (#427, thanks [@sarankumar1325](https://github.com/sarankumar1325))
 
 ## 0.12.0 (2026-11-16)
 
