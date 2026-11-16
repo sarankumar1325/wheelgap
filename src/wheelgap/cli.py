@@ -19,10 +19,10 @@ from packaging.markers import InvalidMarker, Marker
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 
-from . import __version__, cache, condaforge, origin, pypi
+from . import __version__, cache, condaforge, origin
 from . import notes as tracker
 from . import suggest as release_suggest
-from .api import running_python
+from .api import explain_issues_urls, running_python
 from .badge import write_badge
 from .build import BuildInfo, describe, lookup_all, requires_for, shown
 from .check import (
@@ -1504,27 +1504,6 @@ def version_suggestions(
     return {
         id(r.package): s for key, rows in asked.items() if key in found for r, s in zip(rows, found[key], strict=True)
     }
-
-
-def explain_issues_urls(
-    rows: list[Row],
-    sources: list[Source],
-    index_url: str | None = None,
-) -> dict[int, str | None]:
-    """Issues tracker URLs for explained packages that pass the PyPI origin rule, by id(package)."""
-    if origin.other_index(index_url) is not None:
-        return {id(r.package): None for r in rows}
-    private = origin.private_names(sources, simple_index=index_url)
-    source_of = {id(p): s for s in sources for original in s.packages for p in original.variants}
-    out: dict[int, str | None] = {}
-    for r in rows:
-        pkg = r.package
-        src = source_of.get(id(pkg))
-        if src and origin.known_pypi(pkg, src, simple_index=index_url, private=private):
-            out[id(pkg)] = pypi.extract_issues_url(pkg.project_urls, pkg.home_page)
-        else:
-            out[id(pkg)] = None
-    return out
 
 
 def main(argv: list[str] | None = None) -> int:
