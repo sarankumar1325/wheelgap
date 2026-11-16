@@ -163,7 +163,7 @@ The hook runs when `uv.lock`, `poetry.lock`, `pdm.lock`, `pylock.toml`, `Pipfile
 
 ## Code scanning {#code-scanning}
 
-`--sarif PATH` (from 0.13.0 on) writes a [SARIF](output.md#sarif) report that
+`--sarif PATH` (after 0.12.0) writes a [SARIF](output.md#sarif) report that
 [upload-sarif](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/uploading-a-sarif-file-to-github)
 turns into code scanning alerts: listed in the Security tab, and shown on the lockfile line in pull requests that add
 a gap.

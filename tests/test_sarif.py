@@ -2,14 +2,20 @@
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 import pytest
 
+from wheelgap.check import Row, Status
 from wheelgap.cli import main
+from wheelgap.sarif import sarif_log
+from wheelgap.sources import Package, Source
+from wheelgap.targets import Target
 
-# tests/fixtures/sarif-schema-2.1.0.json is the OASIS schema, unchanged, from
-# https://github.com/oasis-tcs/sarif-spec/blob/main/sarif-2.1/schema/sarif-schema-2.1.0.json
+# tests/fixtures/sarif-schema-2.1.0.json is the OASIS schema, unchanged (git blob 0f58372b), as of the commit that last
+# changed it upstream:
+# https://github.com/oasis-tcs/sarif-spec/blob/a560296ca8c921f3bdb8d4a8db57ab83dae968a7/sarif-2.1/schema/sarif-schema-2.1.0.json
 SCHEMA = json.loads((Path(__file__).parent / "fixtures" / "sarif-schema-2.1.0.json").read_text(encoding="utf-8"))
 TYPES = {"object": dict, "array": list, "string": str, "integer": int, "number": (int, float), "boolean": bool}
 ANNOTATIONS = {"$schema", "id", "title", "description", "default", "format"}  # format: not asserted, as by default
@@ -87,12 +93,24 @@ def check(value, schema, where="$"):
                 check(item, schema["items"], f"{where}[{i}]")
 
 
+def valid(log):
+    """The log's results, after checking it against the schema, and that each located result has a line, which
+    GitHub needs to show it."""
+    check(log, SCHEMA)
+    results = log["runs"][0]["results"]
+    for r in results:
+        for location in r.get("locations", []):
+            physical = location["physicalLocation"]
+            assert physical["artifactLocation"]["uriBaseId"] == "%SRCROOT%"
+            assert physical["region"]["startLine"] >= 1
+    return results
+
+
 def sarif(tmp_path, *args):
     out = tmp_path / "out.sarif"
     code = main([*args, "--sarif", str(out)])
     log = json.loads(out.read_text(encoding="utf-8"))
-    check(log, SCHEMA)
-    return code, log, log["runs"][0]["results"]
+    return code, log, valid(log)
 
 
 ARMGAP = ("-p", "3.13", "-t", "linux-aarch64,musl-aarch64", "--offline")
@@ -125,6 +143,7 @@ def test_one_result_per_package_and_gap_target_at_its_lockfile_line(tmp_path, fi
     assert results[1]["message"]["text"].startswith("newglibc 2.0 can't install on linux-aarch64. ")
     assert "needs glibc 2.39" in results[1]["message"]["text"]
     assert len({json.dumps(r["partialFingerprints"]) for r in results}) == 3
+    assert results[0]["partialFingerprints"] == {"wheelgap/v1": "tests/fixtures/armgap/uv.lock:armlib:musl-aarch64"}
 
 
 def test_advisory_is_a_note_and_allowed_source_builds_a_warning(tmp_path, fixtures):
@@ -179,3 +198,50 @@ def test_a_file_outside_the_repository_has_no_location(tmp_path, fixtures, monke
     monkeypatch.setenv("GITHUB_WORKSPACE", str(tmp_path))
     _, _, results = sarif(tmp_path, str(fixtures / "armgap"), *ARMGAP)
     assert results and all("locations" not in r for r in results)
+
+
+def test_two_lockfiles_with_the_same_gap_are_separate_alerts(tmp_path, fixtures, monkeypatch):
+    monkeypatch.setenv("GITHUB_WORKSPACE", str(tmp_path))
+    locks = []
+    for folder in ("a", "b c"):  # a space, which the uri percent-encodes
+        (tmp_path / folder).mkdir()
+        locks.append(str(shutil.copy(fixtures / "armgap" / "uv.lock", tmp_path / folder / "uv.lock")))
+    _, _, results = sarif(tmp_path, *locks, *ARMGAP)
+    assert len(results) == 6
+    assert len({r["partialFingerprints"]["wheelgap/v1"] for r in results}) == 6
+    uris = {r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for r in results}
+    assert uris == {"a/uv.lock", "b%20c/uv.lock"}
+
+
+ARM = Target(3, 13, False, "linux-aarch64")
+
+
+def test_a_package_at_two_versions_in_one_file_is_two_alerts(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_WORKSPACE", str(tmp_path))
+    lock = tmp_path / "uv.lock"
+    lock.write_bytes(
+        b'version = 1\n\n[[package]]\nname = "dup"\nversion = "1.0"\n\n[[package]]\nname = "dup"\nversion = "2.0"\n'
+    )
+    old, new = Package("dup", "1.0", files=[]), Package("dup", "2.0", files=[])
+    source = Source("uv.lock", packages=[old, new], path=lock, kind="uv")
+    rows = [Row(old, {ARM: Status.MISSING}), Row(new, {ARM: Status.MISSING})]
+    results = valid(sarif_log(rows, [ARM], [source], "source"))
+    assert [r["locations"][0]["physicalLocation"]["region"]["startLine"] for r in results] == [4, 8]
+    assert [r["partialFingerprints"]["wheelgap/v1"] for r in results] == [
+        "uv.lock:dup==1.0:linux-aarch64",
+        "uv.lock:dup==2.0:linux-aarch64",
+    ]
+
+
+def test_a_file_without_a_line_is_located_at_line_1(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_WORKSPACE", str(tmp_path))
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\nname = "app"\ndependencies = ["armlib"]\n', encoding="utf-8")
+    package = Package("armlib", "1.4.0", files=[])
+    source = Source("pyproject.toml", packages=[package], path=pyproject, kind="pyproject")
+    (result,) = valid(sarif_log([Row(package, {ARM: Status.SOURCE})], [ARM], [source], "source"))
+    physical = result["locations"][0]["physicalLocation"]
+    assert physical == {
+        "artifactLocation": {"uri": "pyproject.toml", "uriBaseId": "%SRCROOT%"},
+        "region": {"startLine": 1},
+    }

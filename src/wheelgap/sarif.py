@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import quote
 
 from . import __version__
 from .check import Row, Status, explain_lines
@@ -12,7 +13,7 @@ from .sources import Source
 from .targets import Target
 
 SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
-DOCS = "https://github.com/wheelgap/wheelgap/blob/main/docs/cli.md"
+DOCS = "https://wheelgap.github.io/wheelgap/output/#sarif"
 # How many --explain lines go into a result's message; --explain prints them all.
 REASON_LINES = 3
 
@@ -62,25 +63,39 @@ def sarif_log(
 ) -> dict:
     """One result per package and gap target (`source` or `missing`; not `unknown`, a failed lookup, and not
     a target `--ignore NAME:TARGET` ignores), located at the package's entry in its input file (relative to
-    GITHUB_WORKSPACE, else the current directory) where the reader knows the line, else at the file; a package
-    named on the command line, or in a file outside the repository, has no location."""
+    GITHUB_WORKSPACE, else the current directory) where the reader knows the line, else at the file's first line; a
+    package named on the command line, or in a file outside the repository, has no location."""
     multi_py = len({t.python for t in targets}) > 1
     rule_ids = list(RULES)
     locator = Locator(sources)
-    results = []
+    # Each gap's file, relative to the repository, and line: (None, None) for a package named on the command line or
+    # read from a file outside the repository, which GitHub couldn't show.
+    gaps: list[tuple[Row, str | None, int | None]] = []
     for row in rows:
         if row.ok:
             continue
+        located = locator.locate(row.package)
+        path = relative_path(located[0]) if located is not None else None
+        gaps.append((row, path, located[1] if located is not None and path is not None else None))
+    # A package locked at several versions in one file gets the version in its fingerprint, so each is an alert.
+    versions: dict[tuple[str | None, str], set[str | None]] = {}
+    for row, path, _ in gaps:
+        versions.setdefault((path, row.package.key), set()).add(row.package.version)
+    results = []
+    for row, path, line in gaps:
         pkg = row.package
         name = f"{pkg.name} {pkg.version}" if pkg.version else pkg.name
-        located = locator.locate(pkg)
         locations = []
-        uri = relative_path(located[0]) if located is not None else None
-        if located is not None and uri is not None:  # a file outside the repository has no location GitHub can show
-            physical: dict = {"artifactLocation": {"uri": uri}}
-            if located[1] is not None:
-                physical["region"] = {"startLine": located[1]}
+        if path is not None:
+            # GitHub shows a result only with a line, so one in a file the reader has no line for is at line 1.
+            physical: dict = {
+                "artifactLocation": {"uri": quote(path, safe="/"), "uriBaseId": "%SRCROOT%"},
+                "region": {"startLine": line if line is not None else 1},
+            }
             locations.append({"physicalLocation": physical})
+        ident = f"{path or ''}:{pkg.key}"
+        if len(versions[(path, pkg.key)]) > 1:
+            ident += f"=={pkg.version}"
         for target in targets:
             status = row.results[target]
             if status not in RULES or target in row.ignored:
@@ -103,8 +118,9 @@ def sarif_log(
                 "ruleIndex": rule_ids.index(status),
                 "level": level(status, target, fail_on, advisory),
                 "message": {"text": text},
-                # The same package and target is the same alert from one run to the next, whatever its version.
-                "partialFingerprints": {"wheelgap/v1": f"{pkg.key}:{label}"},
+                # The same file, package and target is the same alert from one run to the next, whatever its version
+                # (unless the file locks the package at several versions).
+                "partialFingerprints": {"wheelgap/v1": f"{ident}:{label}"},
                 "properties": {"package": pkg.name, "version": pkg.version, "target": label, "status": status.value},
             }
             if locations:
