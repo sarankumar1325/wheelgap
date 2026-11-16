@@ -1,7 +1,7 @@
 # Output
 
 wheelgap prints a table by default, or JSON (`--json`) or Markdown (`--markdown`) instead, and can also write a JUnit
-XML file (`--junit PATH`). Notes and errors go to stderr, so the stdout of `--json` and `--markdown` holds only the
+XML file (`--junit PATH`) or a SARIF file (`--sarif PATH`). Notes and errors go to stderr, so the stdout of `--json` and `--markdown` holds only the
 report.
 
 ## Exit codes
@@ -408,3 +408,22 @@ report, alongside whatever output mode you use. It has one testsuite per target 
 - Other cells (`wheel`, `bundled`, and `source` with `--fail-on missing`) pass.
 - A package locked at several versions gets the version in its testcase name; one that several inputs lock at the
   same version is one testcase, which fails if any of them fails.
+
+## SARIF {#sarif}
+
+`--sarif PATH` also writes a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) file
+for GitHub code scanning (or another SARIF viewer), alongside whatever output mode you use. It has two rules,
+`wheelgap/source` and `wheelgap/missing`, and one result per package and target with that status:
+
+- The level is `error` for a gap that fails the run, `warning` for `source` under `--fail-on missing`, and `note` on
+  an `--advisory` target.
+- Gaps that `--ignore NAME:TARGET` accepts have no result, and neither do `unknown` cells (a lookup that failed isn't
+  a finding about the package); the exit code still fails on them.
+- The message says what happens on the target, with up to three of the `--explain` lines saying why:
+  `newglibc 2.0 can't install on linux-aarch64. newglibc-2.0-cp313-cp313-manylinux_2_39_aarch64.whl
+  manylinux_2_39_aarch64 needs glibc 2.39, newer than ...`.
+- The location is the package's line in its lockfile or requirements file, relative to `GITHUB_WORKSPACE` (else the
+  current directory), as for [`--github-annotations`](cli.md#github-annotations). A package named on the command line,
+  or read from a file outside the repository, has no location.
+- `partialFingerprints` key a result by package and target, not version, so code scanning keeps one alert open
+  across lockfile bumps until the gap goes away.

@@ -53,6 +53,7 @@ from .pyodide import (
     load_pyodide_lock,
 )
 from .pypi import check_index_url, fill_all, keeps_locked_files, previous_release, recheck_lock, split_credentials
+from .sarif import write_sarif
 from .sources import (
     Package,
     Source,
@@ -299,6 +300,11 @@ def make_parser() -> argparse.ArgumentParser:
         "--junit",
         metavar="PATH",
         help="also write a JUnit XML report to PATH, alongside the usual output",
+    )
+    p.add_argument(
+        "--sarif",
+        metavar="PATH",
+        help="also write a SARIF 2.1.0 report to PATH for code scanning (github/codeql-action/upload-sarif)",
     )
     p.add_argument(
         "--badge",
@@ -2132,6 +2138,13 @@ def _main(argv: list[str]) -> int:
     if args.junit is not None:  # an empty PATH (an unset CI variable) is an error, not "no report"
         try:
             write_junit(args.junit, rows, targets, fail_on, advisory)
+        except OSError as e:
+            print(f"wheelgap: error: {e}", file=sys.stderr)
+            return input_error_json(e) if args.json else 2
+
+    if args.sarif is not None:  # an empty PATH is an error, as for --junit
+        try:
+            write_sarif(args.sarif, rows, targets, sources, fail_on, advisory)
         except OSError as e:
             print(f"wheelgap: error: {e}", file=sys.stderr)
             return input_error_json(e) if args.json else 2
