@@ -1,7 +1,7 @@
 """A small on-disk cache of pinned index lookups (/<name>/<version>/json), so a repeat run needn't ask again,
-of --conda-forge lookups (a version's conda-forge builds, cut down to what matching needs), of --notes lookups
-(the coverage tracker's notes and build lab results for a package), and of --build-info answers (what a release's
-sdist says about its build).
+of --deps' wheel metadata files (each release's Requires-Dist), of --conda-forge lookups (a version's conda-forge
+builds, cut down to what matching needs), of --notes lookups (the coverage tracker's notes and build lab results for
+a package), and of --build-info answers (what a release's sdist says about its build).
 
 A cache that can't be read or written is only ever a miss: it never fails a run.
 """
@@ -212,6 +212,24 @@ def load_lab(source: str, name: str) -> list | None:
 def save_lab(source: str, name: str, builds: list[dict]) -> None:
     """Store a package's build lab results, as notes.py checked them."""
     _save(source, name, "build-lab-v1", "builds", builds)
+
+
+def _metadata_key(index: str) -> str:
+    return f"metadata-v1 {index}"
+
+
+def load_metadata(index: str, url: str) -> list[str] | None:
+    """--deps: the cached Requires-Dist of the wheel metadata file at `url` (PEP 658), or None for a miss. An uploaded
+    file's metadata never changes, so the URL is the whole key; it is hashed, like every key, never written out."""
+    requires = _load(_metadata_key(index), url, "metadata", "requires")
+    if isinstance(requires, list) and all(isinstance(r, str) for r in requires):
+        return requires
+    return None
+
+
+def save_metadata(index: str, url: str, requires: list[str]) -> None:
+    """Store a wheel metadata file's Requires-Dist. Only an answer is kept: a failed fetch is asked again next run."""
+    _save(_metadata_key(index), url, "metadata", "requires", requires)
 
 
 def _save(index: str, name: str, version: str, key: str, value: object) -> None:

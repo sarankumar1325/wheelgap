@@ -30,7 +30,7 @@ from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from . import pypi
+from . import cache, pypi
 from .check import SDIST_SUFFIXES, marker_holds, rejection
 from .sources import Package, Source, SourceError
 from .targets import Target
@@ -61,7 +61,10 @@ class _Tree:
 class Resolver:
     """Resolves requirements per target. Index answers are kept for the run, so later targets cost no requests."""
 
-    def __init__(self) -> None:
+    def __init__(self, read_cache: bool = False, write_cache: bool = False) -> None:
+        # The on-disk cache of wheel metadata files (cache.py): a release's Requires-Dist never changes once it's
+        # uploaded. Project pages (the release lists) change with every upload, so they're never cached.
+        self.read_cache, self.write_cache = read_cache, write_cache
         self._projects: dict[str, dict | Exception] = {}
         self._requires: dict[tuple[str, str, str], list[Requirement] | Exception] = {}
         self.names: dict[str, str] = {}  # key -> the name the index gives it
@@ -89,10 +92,16 @@ class Resolver:
 
     def _wheel_requires(self, wheel: dict) -> list[str]:
         url = wheel["url"] + ".metadata"
+        if url not in self._metadata and self.read_cache:
+            if (cached := cache.load_metadata(pypi.index_url(), url)) is not None:
+                self._metadata[url] = cached
         if url not in self._metadata:
             try:
                 text = pypi.fetch_text(url, max_bytes=METADATA_MAX_BYTES)
-                self._metadata[url] = email.parser.Parser().parsestr(text).get_all("Requires-Dist") or []
+                requires = email.parser.Parser().parsestr(text).get_all("Requires-Dist") or []
+                self._metadata[url] = requires
+                if self.write_cache:
+                    cache.save_metadata(pypi.index_url(), url, requires)
             except urllib.error.HTTPError as e:
                 self._metadata[url] = ValueError(f"no metadata file for {wheel['filename']} (HTTP {e.code})")
             except Exception as e:

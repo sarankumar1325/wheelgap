@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `--deps` now caches each wheel's metadata file (its `Requires-Dist`) on disk for 24 hours, like pinned lookups, so a repeat run asks PyPI only for the release lists. `--no-cache` skips it, `--online` asks again, failed reads aren't cached, and the Python API doesn't use it. (#408, thanks [@sarankumar1325](https://github.com/sarankumar1325))
 - `--explain` now links each gap to the package's issue tracker from PyPI metadata (`ask for a wheel: <url>`), only for packages whose index is known to be PyPI. `--json --explain` includes an additive `issues_url` per package. (#400)
 - Text and Markdown gap tables now name the direct dependency behind a transitive gap (for example, `cryptography (via mcp)`), with a count when more direct dependencies lead to it; works with `uv.lock`, Poetry 1.x and `--deps`, while leaving JSON and quiet output unchanged. (#406, thanks [@AdityaSreevatsaK](https://github.com/AdityaSreevatsaK))
 - Action: a `dist` input runs `--dist` on the folder about to be uploaded, as the release gate in docs/ci.md: the job fails when the release drops a platform the previous release had a wheel for, so the upload step never runs. It can't be combined with `compare-to`. (#405, thanks [@Seyamalam](https://github.com/Seyamalam))

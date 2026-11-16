@@ -75,6 +75,8 @@ The same folder also keeps, for 24 hours each:
   version;
 - `--notes` lookups, a package the tracker doesn't list included;
 - `--build-info` answers (the sdist's `[build-system]` table), but only from a download that matched its sha256.
+- `--deps` reads of each wheel's metadata file (its `Requires-Dist` lines), keyed by a hash of the file's URL, so a
+  repeat `--deps` run asks the index only for the release lists. Failed reads aren't cached.
 
 They follow `--no-cache` and `--online` like the other lookups.
 

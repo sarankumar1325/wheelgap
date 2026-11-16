@@ -1798,7 +1798,8 @@ def _main(argv: list[str]) -> int:
                         f"{source.label}: {env} may point pip or uv at another index, and --deps uses only PyPI, "
                         "so check a lockfile instead"
                     )
-            resolver = Resolver()
+            # Wheel metadata files are cached on disk like pinned lookups: --online asks again, --no-cache skips it.
+            resolver = Resolver(read_cache=not (args.no_cache or args.online), write_cache=not args.no_cache)
             for source in dependency_sources:
                 if pinned_complete(source):
                     print(

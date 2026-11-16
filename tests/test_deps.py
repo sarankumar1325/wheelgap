@@ -9,7 +9,7 @@ import pytest
 from packaging.requirements import Requirement
 
 import wheelgap
-from wheelgap import deps, pypi
+from wheelgap import cache, deps, pypi
 from wheelgap.cli import main
 from wheelgap.deps import DepsError, Resolver
 
@@ -546,3 +546,58 @@ def test_deps_direct_origins_preserve_roots_across_multiple_targets(index, capsy
     assert code == 1
     assert "crypt (via parenta +1)" in out
     assert index
+
+
+def test_wheel_metadata_is_cached_on_disk_between_runs(index):
+    """#397: a second run reads each wheel's Requires-Dist from the cache instead of the index."""
+    first = Resolver(read_cache=True, write_cache=True).resolve([Requirement("app==1.0")], WIN)
+    fetched = [u for u in index if u.endswith(".metadata")]
+    assert fetched
+    index.clear()
+    second = Resolver(read_cache=True, write_cache=True).resolve([Requirement("app==1.0")], WIN)
+    assert (second.chosen, second.errors) == (first.chosen, first.errors)
+    assert not [u for u in index if u.endswith(".metadata")]
+    assert index  # the release lists are still asked for: they change with every upload
+
+
+def test_wheel_metadata_cache_follows_no_cache_and_online(index):
+    Resolver(read_cache=False, write_cache=False).resolve([Requirement("app==1.0")], WIN)  # --no-cache
+    index.clear()
+    Resolver(read_cache=True, write_cache=True).resolve([Requirement("app==1.0")], WIN)
+    assert [u for u in index if u.endswith(".metadata")]  # nothing was saved
+    index.clear()
+    Resolver(read_cache=False, write_cache=True).resolve([Requirement("app==1.0")], WIN)  # --online
+    assert [u for u in index if u.endswith(".metadata")]  # asked again despite the saved answer
+
+
+def test_failed_metadata_reads_arent_cached(index, monkeypatch):
+    def broken(url, max_bytes, timeout=20.0, attempts=4):
+        raise OSError("connection reset")
+
+    good = pypi.fetch_text
+    monkeypatch.setattr(pypi, "fetch_text", broken)
+    tree = Resolver(read_cache=True, write_cache=True).resolve([Requirement("app==1.0")], WIN)
+    assert tree.errors
+    monkeypatch.setattr(pypi, "fetch_text", good)
+    tree = Resolver(read_cache=True, write_cache=True).resolve([Requirement("app==1.0")], WIN)
+    assert not tree.errors
+
+
+def test_cached_metadata_entries_are_checked(index):
+    url = "https://files.example/x-1.0-py3-none-any.whl.metadata"
+    cache.save_metadata(pypi.index_url(), url, ["a", 1])  # type: ignore[list-item]
+    assert cache.load_metadata(pypi.index_url(), url) is None
+    cache.save_metadata(pypi.index_url(), url, ["a>=1"])
+    assert cache.load_metadata(pypi.index_url(), url) == ["a>=1"]
+    assert cache.load_metadata(pypi.index_url(), url + "x") is None
+    assert url not in "".join(p.read_text() for p in cache.cache_dir().glob("*.json"))
+
+
+def test_cli_deps_reads_metadata_from_the_cache_on_a_second_run(index, capsys):
+    assert main(["app==1.0", "--deps", "-p", "3.14", "-t", "win-arm64"]) in (0, 1)
+    index.clear()
+    assert main(["app==1.0", "--deps", "-p", "3.14", "-t", "win-arm64"]) in (0, 1)
+    assert not [u for u in index if u.endswith(".metadata")]
+    index.clear()
+    main(["app==1.0", "--deps", "-p", "3.14", "-t", "win-arm64", "--no-cache"])
+    assert [u for u in index if u.endswith(".metadata")]
