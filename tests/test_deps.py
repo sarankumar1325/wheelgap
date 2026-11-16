@@ -666,3 +666,22 @@ def test_deps_json_explain_has_issues_url_for_a_transitive_gap(crypt_issues, cap
     assert rows["crypt"]["via"] == {"win-arm64": ["app", "lib", "crypt"]}
     assert rows["crypt"]["issues_url"] == "https://github.com/example/crypt/issues"
     assert rows["lib"]["issues_url"] is None  # publishes no tracker and isn't on GitHub
+
+
+def test_deps_json_explain_direct_names_each_direct_requirement(index, capsys):
+    code = main(
+        ["parenta", "parentb", "--deps", "-p", "3.14", "-t", "win-arm64", "--json", "--explain", "--no-suggest"]
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert code == 1
+    crypt = next(p for p in output["packages"] if p["name"] == "crypt")
+    assert sorted(crypt["direct"]["win-arm64"]) == ["parenta", "parentb"]
+    assert len(crypt["via"]["win-arm64"]) > 1  # `via` still gives one full path
+
+
+def test_deps_json_explain_direct_extra_only_names_the_requester(index, capsys):
+    code = main(["app", "plain", "--deps", "-p", "3.14", "-t", "win-arm64", "--json", "--explain", "--no-suggest"])
+    output = json.loads(capsys.readouterr().out)
+    assert code == 1
+    crypt = next(p for p in output["packages"] if p["name"] == "crypt")
+    assert crypt["direct"] == {"win-arm64": ["app"]}

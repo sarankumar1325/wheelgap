@@ -936,6 +936,13 @@ def report_json(
             }
             # Same targets as `rejected`, minus any without a path (inputs with no dependency graph).
             out["via"] = {t.label(multi_py): r.via[t] for t in gap_targets(r, targets) if t in r.via}
+            # The direct dependencies that lead to each gap target, as the table's `(via ...)` names them; only where
+            # the input says (uv.lock, Poetry 1.x, --deps), so `{}` for a direct dependency or an input without a graph.
+            out["direct"] = {
+                t.label(multi_py): list(dict.fromkeys(r.direct_via[t]))
+                for t in gap_targets(r, targets)
+                if r.direct_via.get(t)
+            }
             if issues_urls is not None:
                 out["issues_url"] = issues_urls.get(id(r.package))
             if conda_forge and (h := conda_forge.get(id(r.package))):
