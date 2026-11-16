@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `--deps` on a requirements file no longer refuses a constraint file with environment markers (`urllib3<2; python_version < "3.10"`), such as OpenStack's upper-constraints: each marked constraint applies on the targets where pip would apply it, and `extra == "..."` never holds on a constraint, as in pip. A marker a target can't decide (`platform_release`, `platform_version`, or `platform_machine` on a target like `linux-armv7l`) on a package the tree installs still stops the run with an error, as a URL constraint does. (#425, thanks [@AdityaSreevatsaK](https://github.com/AdityaSreevatsaK))
 - `--json --explain` adds `direct` to each package: for each gap target, the direct dependencies that lead to it (`{"win-arm64": ["mcp", "httpx"]}`), as the text table's `cryptography (via mcp)` names them, for uv.lock, Poetry 1.x and `--deps` inputs. Additive: `{}` for a direct dependency or an input without a graph, and no existing key changes. (#427, thanks [@sarankumar1325](https://github.com/sarankumar1325))
 
 ## 0.12.0 (2026-11-16)
