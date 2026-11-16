@@ -88,10 +88,10 @@ uvloop 0.21.0 on win-arm64: ● source
 Other inputs have no dependency graph, so they show no path. If you think wheelgap got a package wrong, this output
 (or `--json --explain`) is all a bug report needs, with no need to share your lockfile.
 
-When the package comes from PyPI and publishes an issue tracker in its metadata (or a GitHub repository fallback),
-each gap line also links to it so you can ask the maintainers for a wheel. Its `project_urls` labels are read the way
-PyPI reads its well-known labels ([PEP 753](https://peps.python.org/pep-0753/)), so `Issues`, `Issue-Tracker`,
-`bug_tracker` and `GitHub: issues` all count:
+After 0.11.0, when the package comes from PyPI and publishes an issue tracker in its metadata (or a GitHub repository
+fallback), each gap line also links to it so you can ask the maintainers for a wheel. Its `project_urls` labels are
+read the way PyPI reads its well-known labels ([PEP 753](https://peps.python.org/pep-0753/)), so `Issues`,
+`Issue-Tracker`, `bug_tracker` and `GitHub: issues` all count:
 
 ```text
 armlib 1.4.0 on musl-aarch64: ● source
@@ -320,9 +320,9 @@ key = next(t["label"] for t in data["targets"] if t["python"] == "3.13" and t["p
 gaps = [p["name"] for p in data["packages"] if p["results"].get(key) in ("source", "missing")]
 ```
 
-With `--json --explain`, each package gets `rejected` (`{"file", "reason"}` objects), `via` (the dependency path,
-both keyed by target label like `results`; `via` is `{}` for inputs with no dependency graph), and `issues_url` (the
-package's issue tracker URL from PyPI metadata, or `null`).
+With `--json --explain`, each package gets `rejected` (`{"file", "reason"}` objects) and `via` (the dependency path),
+both keyed by target label like `results`; `via` is `{}` for inputs with no dependency graph. After 0.11.0 it also
+gets `issues_url`: the package's issue tracker URL from its PyPI metadata, or `null`.
 
 If an input can't be read (a missing lockfile, an unknown target, a bad `[tool.wheelgap]` value), `--json` prints an
 error object on stdout instead of results, next to the usual `wheelgap: error:` line on stderr and exit code 2:

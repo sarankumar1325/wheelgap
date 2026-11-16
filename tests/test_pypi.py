@@ -798,6 +798,23 @@ def test_extract_issues_url_github_fallback():
     assert pypi.extract_issues_url(None, homepage="https://github.com/org/repo") == "https://github.com/org/repo/issues"
 
 
+def test_extract_issues_url_refuses_control_characters():
+    # The URL comes from the package's metadata and is printed to a terminal: no escape sequences, no line breaks.
+    for bad in (
+        "https://github.com/org/repo/issues\x1b[2J",
+        "https://bugs.example.com/\x07",
+        "https://ex.com/a\nb",
+        "https://ex.com/\u202eevil",
+    ):
+        assert pypi.extract_issues_url({"Issues": bad}) is None, bad
+    assert pypi.extract_issues_url({"Source": "https://github.com/org/repo\x1b]8;;"}) is None
+
+
+def test_extract_issues_url_refuses_userinfo():
+    assert pypi.extract_issues_url({"Issues": "https://github.com@evil.example/x"}) is None
+    assert pypi.extract_issues_url({"Issues": "https://user:pass@bugs.example.com/"}) is None
+
+
 def test_extract_issues_url_rejects_insecure_and_invalid():
     assert pypi.extract_issues_url({"Issues": "http://insecure.example.com/issues"}) is None
     assert pypi.extract_issues_url({"Source": "http://github.com/org/repo"}) is None
@@ -833,3 +850,9 @@ def test_extract_issues_url_normalised_labels_keep_the_safety_checks():
     assert pypi.extract_issues_url(urls) == "https://bugs.example.com/first"
     urls = {"Tracker": "https://tracker.example.com/demo", "Issue_Tracker": "https://bugs.example.com/project"}
     assert pypi.extract_issues_url(urls) == "https://bugs.example.com/project"
+
+
+def test_extract_issues_url_takes_the_first_valid_of_labels_that_normalise_alike():
+    # "Issues" with an http URL and "issues" with an https one: the https one, as before label normalisation.
+    urls = {"Issues": "http://bugs.example.com/", "issues": "https://bugs.example.com/"}
+    assert pypi.extract_issues_url(urls) == "https://bugs.example.com/"
