@@ -805,3 +805,31 @@ def test_extract_issues_url_rejects_insecure_and_invalid():
     assert pypi.extract_issues_url(None, homepage="https://example.com/blog") is None
     assert pypi.extract_issues_url({}) is None
     assert pypi.extract_issues_url(None, None) is None
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["Issue-Tracker", "Bug-Tracker", "bugtracker", "issue_tracker", "GitHub: issues", "ISSUES ", "Bug Reports", "Bug"],
+)
+def test_extract_issues_url_normalises_labels_like_pep_753(label):
+    """#410: lowercase, then drop punctuation and whitespace, as PyPI does for its well-known labels."""
+    url = "https://github.com/org/repo/issues"
+    assert pypi.extract_issues_url({label: url, "Documentation": "https://docs.example.com"}) == url
+
+
+def test_extract_issues_url_matches_whole_labels_only():
+    # "Known issues" usually points at a docs page listing problems, not a place to ask for a wheel, so it
+    # doesn't count as the tracker; the GitHub source link is used instead.
+    urls = {"Known issues": "https://docs.example.com/known-issues", "Source Code": "https://github.com/org/repo"}
+    assert pypi.extract_issues_url(urls) == "https://github.com/org/repo/issues"
+    assert pypi.extract_issues_url({"Known issues": "https://docs.example.com/known-issues"}) is None
+
+
+def test_extract_issues_url_normalised_labels_keep_the_safety_checks():
+    assert pypi.extract_issues_url({"Issue-Tracker": "http://bugs.example.com/project"}) is None
+    assert pypi.extract_issues_url({"issue_tracker": "https://bugs.example.com/a b"}) is None
+    # The first of two labels that normalise alike wins, and a preferred key beats a later fallback one.
+    urls = {"Bug-Tracker": "https://bugs.example.com/first", "bug tracker": "https://bugs.example.com/second"}
+    assert pypi.extract_issues_url(urls) == "https://bugs.example.com/first"
+    urls = {"Tracker": "https://tracker.example.com/demo", "Issue_Tracker": "https://bugs.example.com/project"}
+    assert pypi.extract_issues_url(urls) == "https://bugs.example.com/project"

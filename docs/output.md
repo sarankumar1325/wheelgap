@@ -89,7 +89,9 @@ Other inputs have no dependency graph, so they show no path. If you think wheelg
 (or `--json --explain`) is all a bug report needs, with no need to share your lockfile.
 
 When the package comes from PyPI and publishes an issue tracker in its metadata (or a GitHub repository fallback),
-each gap line also links to it so you can ask the maintainers for a wheel:
+each gap line also links to it so you can ask the maintainers for a wheel. Its `project_urls` labels are read the way
+PyPI reads its well-known labels ([PEP 753](https://peps.python.org/pep-0753/)), so `Issues`, `Issue-Tracker`,
+`bug_tracker` and `GitHub: issues` all count:
 
 ```text
 armlib 1.4.0 on musl-aarch64: ● source

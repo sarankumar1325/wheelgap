@@ -13,6 +13,7 @@ import os
 import posixpath
 import socket
 import ssl
+import string
 import tarfile
 import threading
 import time
@@ -277,22 +278,44 @@ def fetch_releases(key: str, timeout: float = 10.0, deadline: float | None = Non
     return releases
 
 
-_ISSUE_KEYS = ("issues", "issue tracker", "bug tracker", "tracker", "bugs", "bug reports", "issue reports")
-_REPO_KEYS = ("source", "source code", "code", "repository", "homepage", "home")
+# project_urls labels, normalised as PyPI does for its well-known labels (PEP 753, _normalise_label), in order of
+# preference: "Issue-Tracker", "issue_tracker" and "Issue Tracker" are all "issuetracker". Only whole labels match:
+# "Known issues" ("knownissues") is usually a docs page listing problems, not a place to ask for a wheel.
+_ISSUE_KEYS = (
+    "issues",
+    "issuetracker",
+    "bugtracker",
+    "tracker",
+    "bugs",
+    "bugreports",
+    "issuereports",
+    "issue",
+    "bug",
+    "githubissues",
+    "gitlabissues",
+)
+_REPO_KEYS = ("source", "sourcecode", "code", "repository", "homepage", "home")
+_LABEL_DROP = str.maketrans("", "", string.punctuation + string.whitespace)
+
+
+def _normalise_label(label: str) -> str:
+    """PEP 753's label normalisation: lowercase, with punctuation and whitespace removed."""
+    return label.translate(_LABEL_DROP).lower()
 
 
 def extract_issues_url(project_urls: dict[str, str] | None, homepage: str | None = None) -> str | None:
     """Extract an HTTPS issue tracker URL from PyPI metadata.
 
-    Reads `project_urls` case-insensitively, preferring issue tracker keys (Issues, Bug Tracker, Tracker).
+    Reads `project_urls` with labels normalised as PEP 753 does (so `Issue-Tracker` and `bug_tracker` count),
+    preferring issue tracker keys (Issues, Bug Tracker, Tracker).
     Falls back to a GitHub Source/Homepage URL with `/issues` added.
     Refuses any URL that is not an https:// URL.
     """
     lower_urls: dict[str, str] = {}
     if project_urls and isinstance(project_urls, dict):
-        lower_urls = {
-            k.strip().lower(): v for k, v in project_urls.items() if isinstance(k, str) and isinstance(v, str)
-        }
+        for k, v in project_urls.items():
+            if isinstance(k, str) and isinstance(v, str):
+                lower_urls.setdefault(_normalise_label(k), v)  # the first of two labels that normalise alike
         for target_key in _ISSUE_KEYS:
             if target_key in lower_urls:
                 candidate = lower_urls[target_key].strip()
