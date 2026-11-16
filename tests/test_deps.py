@@ -651,9 +651,13 @@ def crypt_issues(index, monkeypatch):
 def test_deps_explain_links_a_transitive_gaps_issue_tracker(crypt_issues, capsys):
     """#412: a package --deps found gets the `ask for a wheel` link like a listed one, and only once."""
     for run in ("fresh", "from the cache"):
+        crypt_issues.clear()
         main(["app==1.0", "--deps", "-p", "3.14", "-t", "win-arm64", "--explain"])
         out = capsys.readouterr().out
         assert out.count("ask for a wheel: https://github.com/example/crypt/issues") == 1, run
+        pinned = [u for u in crypt_issues if re.search(r"/crypt/[^/]+/json$", u)]
+        # The second run's link comes from the cache: crypt's pinned release isn't asked for again.
+        assert bool(pinned) == (run == "fresh"), (run, pinned)
 
 
 def test_deps_json_explain_has_issues_url_for_a_transitive_gap(crypt_issues, capsys):
